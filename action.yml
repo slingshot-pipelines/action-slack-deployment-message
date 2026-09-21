@@ -1,0 +1,70 @@
+name: action-slack-deployment-message
+description: Send a Slack message announcing the result of a deployment
+
+inputs:
+  SLACK_BOT_TOKEN:
+    description: The Slack bot token used to authenticate the message post
+    required: true
+  SLACK_CHANNEL:
+    description: The Slack channel (name or ID) to post the message to
+    required: true
+  PROJECT:
+    description: The name of the project being deployed
+    required: true
+  COMPONENT:
+    description: The name of the component being deployed
+    required: true
+  VERSION:
+    description: The version being deployed
+    required: true
+  ENVIRONMENT:
+    description: The environment being deployed to
+    required: true
+  JOB_STATUS:
+    description: >-
+      The result of the deployment. One of "success", "failure", or "cancelled".
+      Should be passed as the `job.status` field.
+
+      See https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#job-context
+    required: true
+
+runs:
+  using: composite
+  steps:
+    -
+      name: Determine deployment result
+      id: result
+      shell: bash
+      env:
+        JOB_STATUS: ${{ inputs.JOB_STATUS }}
+      run: |
+        case "$JOB_STATUS" in
+          success)
+            echo "text=succeeded" >> "$GITHUB_OUTPUT"
+            ;;
+          failure)
+            echo "text=failed" >> "$GITHUB_OUTPUT"
+            ;;
+          cancelled)
+            echo "text=was cancelled" >> "$GITHUB_OUTPUT"
+            ;;
+          *)
+            echo "::error::Unrecognized JOB_STATUS '$JOB_STATUS'. Expected 'success', 'failure', or 'cancelled'."
+            exit 1
+            ;;
+        esac
+
+    -
+      name: Send Slack message
+      uses: slackapi/slack-github-action@v2.1.1
+      with:
+        errors: true
+        method: chat.postMessage
+        token: ${{ inputs.SLACK_BOT_TOKEN }}
+        payload: |
+          channel: "${{ inputs.SLACK_CHANNEL }}"
+          text: "Deployment of ${{ inputs.PROJECT }} ${{ inputs.COMPONENT }} ${{ inputs.VERSION }} to ${{ inputs.ENVIRONMENT }} ${{ steps.result.outputs.text }}"
+
+branding:
+  icon: message-square
+  color: 'green'
