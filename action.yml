@@ -33,20 +33,26 @@ runs:
   steps:
     -
       name: Determine deployment result
-      id: result
+      id: map-job-status
       shell: bash
       env:
         JOB_STATUS: ${{ inputs.JOB_STATUS }}
       run: |
+        FRIENDLY_NAME=""
+        ATTACHMENT_COLOR=""
+
         case "$JOB_STATUS" in
           success)
-            echo "text=succeeded" >> "$GITHUB_OUTPUT"
+            FRIENDLY_NAME="succeeded"
+            ATTACHMENT_COLOR="#2e7d32"
             ;;
           failure)
-            echo "text=failed" >> "$GITHUB_OUTPUT"
+            FRIENDLY_NAME="failed"
+            ATTACHMENT_COLOR="#d32f2f"
             ;;
           cancelled)
-            echo "text=was cancelled" >> "$GITHUB_OUTPUT"
+            FRIENDLY_NAME="was cancelled"
+            ATTACHMENT_COLOR="#6d6d6d"
             ;;
           *)
             echo "::error::Unrecognized JOB_STATUS '$JOB_STATUS'. Expected 'success', 'failure', or 'cancelled'."
@@ -54,6 +60,25 @@ runs:
             ;;
         esac
 
+        echo "friendly-name=$FRIENDLY_NAME" | tee -a "$GITHUB_OUTPUT"
+        echo "attachment-color=$ATTACHMENT_COLOR" | tee -a "$GITHUB_OUTPUT"
+    -
+      name: Construct complex values for message
+      shell: bash
+      id: message-values
+      env:
+        INPUT_VERSION: ${{ inputs.VERSION }}
+      run: |
+        # url-encode the version ref
+        VERSION_ENCODED=$(printf '%s' "${INPUT_VERSION}" | jq -sRrc '@uri')
+
+        # Construct a URL to the version's release
+        RELEASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${VERSION_ENCODED}"
+        echo "release-url=${RELEASE_URL}" | tee -a "$GITHUB_OUTPUT"
+
+        # Construct a URL to the current run
+        RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+        echo "run-url=${RUN_URL}" | tee -a "$GITHUB_OUTPUT"
     -
       name: Send Slack message
       uses: slackapi/slack-github-action@v2.1.1
@@ -63,7 +88,47 @@ runs:
         token: ${{ inputs.SLACK_BOT_TOKEN }}
         payload: |
           channel: "${{ inputs.SLACK_CHANNEL }}"
-          text: "Deployment of ${{ inputs.PROJECT }} ${{ inputs.COMPONENT }} ${{ inputs.VERSION }} to ${{ inputs.ENVIRONMENT }} ${{ steps.result.outputs.text }}"
+          text: "Deployment of ${{ inputs.PROJECT }}/${{ inputs.COMPONENT }} to ${{ inputs.ENVIRONMENT }} ${{ steps.map-job-status.outputs.friendly-name }}"
+          attachments:
+            - color: "${{ steps.map-job-status.outputs.attachment-color }}"
+              blocks:
+                - type: rich_text
+                  elements:
+                    - type: rich_text_section
+                      elements:
+                        - type: text
+                          text: 'Component:'
+                          style:
+                            bold: true
+                        - type: text
+                          text: "\t\t"
+                        - type: text
+                          text: '${{ inputs.PROJECT }}/${{ inputs.COMPONENT }}'
+                    - type: rich_text_section
+                      elements:
+                        - type: text
+                          text: 'Version:'
+                          style:
+                            bold: true
+                        - type: text
+                          text: "\t\t\t"
+                        - type: link
+                          text: '${{ inputs.TAG }}'
+                          url: '${{ steps.message-values.outputs.release-url }}'
+                    - type: rich_text_section
+                      elements:
+                        - type: text
+                          text: 'Deployed to:'
+                          style:
+                            bold: true
+                        - type: text
+                          text: "\t\t"
+                        - type: text
+                          text: dev
+                - type: context
+                  elements:
+                    - type: mrkdwn
+                      text: 'To view this deployment, [click here](${{ steps.message-values.outputs.run-url }})'
 
 branding:
   icon: message-square
