@@ -128,7 +128,7 @@ runs:
                 - type: context
                   elements:
                     - type: mrkdwn
-                      text: 'To view this deployment, [click here](${{ steps.message-values.outputs.run-url }})'
+                      text: 'To view this deployment, <${{ steps.message-values.outputs.run-url }}|click here>'
 
 branding:
   icon: message-square
