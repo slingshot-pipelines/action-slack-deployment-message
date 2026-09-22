@@ -32,43 +32,39 @@ runs:
   using: composite
   steps:
     -
-      name: Determine deployment result
-      id: map-job-status
-      shell: bash
-      env:
-        JOB_STATUS: ${{ inputs.JOB_STATUS }}
-      run: |
-        FRIENDLY_NAME=""
-        ATTACHMENT_COLOR=""
-
-        case "$JOB_STATUS" in
-          success)
-            FRIENDLY_NAME="succeeded"
-            ATTACHMENT_COLOR="#2e7d32"
-            ;;
-          failure)
-            FRIENDLY_NAME="failed"
-            ATTACHMENT_COLOR="#d32f2f"
-            ;;
-          cancelled)
-            FRIENDLY_NAME="was cancelled"
-            ATTACHMENT_COLOR="#6d6d6d"
-            ;;
-          *)
-            echo "::error::Unrecognized JOB_STATUS '$JOB_STATUS'. Expected 'success', 'failure', or 'cancelled'."
-            exit 1
-            ;;
-        esac
-
-        echo "friendly-name=$FRIENDLY_NAME" | tee -a "$GITHUB_OUTPUT"
-        echo "attachment-color=$ATTACHMENT_COLOR" | tee -a "$GITHUB_OUTPUT"
-    -
       name: Construct complex values for message
       shell: bash
       id: message-values
       env:
+        INPUT_JOB_STATUS: ${{ inputs.JOB_STATUS }}
         INPUT_VERSION: ${{ inputs.VERSION }}
       run: |
+        # Pick friendly name and attachment color per status
+        STATUS_NAME=""
+        ATTACHMENT_COLOR=""
+
+        case "$INPUT_JOB_STATUS" in
+          success)
+            STATUS_NAME="succeeded"
+            ATTACHMENT_COLOR="#2e7d32"
+            ;;
+          failure)
+            STATUS_NAME="failed"
+            ATTACHMENT_COLOR="#d32f2f"
+            ;;
+          cancelled)
+            STATUS_NAME="was cancelled"
+            ATTACHMENT_COLOR="#6d6d6d"
+            ;;
+          *)
+            echo "::error::Unrecognized JOB_STATUS '$INPUT_JOB_STATUS'. Expected 'success', 'failure', or 'cancelled'."
+            exit 1
+            ;;
+        esac
+
+        echo "status=$FRIENDLY_NAME" | tee -a "$GITHUB_OUTPUT"
+        echo "attachment-color=$ATTACHMENT_COLOR" | tee -a "$GITHUB_OUTPUT"
+
         # url-encode the version ref
         VERSION_ENCODED=$(printf '%s' "${INPUT_VERSION}" | jq -sRrc '@uri')
 
@@ -80,17 +76,15 @@ runs:
         RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
         echo "run-url=${RUN_URL}" | tee -a "$GITHUB_OUTPUT"
     -
-      name: Send Slack message
-      uses: slackapi/slack-github-action@v2.1.1
-      with:
-        errors: true
-        method: chat.postMessage
-        token: ${{ inputs.SLACK_BOT_TOKEN }}
-        payload: |
+      name: Construct message payload, for easy previewing
+      id: slack-message
+      shell: bash
+      env:
+        SLACK_PAYLOAD: |
           channel: "${{ inputs.SLACK_CHANNEL }}"
-          text: "Deployment of ${{ inputs.PROJECT }}/${{ inputs.COMPONENT }} to ${{ inputs.ENVIRONMENT }} ${{ steps.map-job-status.outputs.friendly-name }}"
+          text: "Deployment of ${{ inputs.PROJECT }}/${{ inputs.COMPONENT }} to ${{ inputs.ENVIRONMENT }} ${{ steps.message-values.outputs.job-status }}"
           attachments:
-            - color: "${{ steps.map-job-status.outputs.attachment-color }}"
+            - color: "${{ steps.message-values.outputs.attachment-color }}"
               blocks:
                 - type: rich_text
                   elements:
@@ -129,6 +123,19 @@ runs:
                   elements:
                     - type: mrkdwn
                       text: 'To view this deployment, <${{ steps.message-values.outputs.run-url }}|click here>'
+      run: |
+        echo "$SLACK_PAYLOAD" | yq '.'
+
+        COMPACT_PAYLOAD=$(echo "$SLACK_PAYLOAD" | yq -o=json -I0 '.')
+        echo "payload=$COMPACT_PAYLOAD" >> "$GITHUB_OUTPUT"
+    -
+      name: Send Slack message
+      uses: slackapi/slack-github-action@v2.1.1
+      with:
+        errors: true
+        method: chat.postMessage
+        token: ${{ inputs.SLACK_BOT_TOKEN }}
+        payload: $${{ steps.slack-message.outputs.payload }}
 
 branding:
   icon: message-square
