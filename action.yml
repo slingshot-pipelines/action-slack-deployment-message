@@ -107,7 +107,7 @@ runs:
                         - type: text
                           text: "\t\t\t"
                         - type: link
-                          text: '${{ inputs.TAG }}'
+                          text: '${{ inputs.VERSION }}'
                           url: '${{ steps.message-values.outputs.release-url }}'
                     - type: rich_text_section
                       elements:
