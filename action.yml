@@ -76,11 +76,13 @@ runs:
         RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
         echo "run-url=${RUN_URL}" | tee -a "$GITHUB_OUTPUT"
     -
-      name: Construct message payload, for easy previewing
-      id: slack-message
-      shell: bash
-      env:
-        SLACK_PAYLOAD: |
+      name: Send Slack message
+      uses: slackapi/slack-github-action@v2.1.1
+      with:
+        errors: true
+        method: chat.postMessage
+        token: ${{ inputs.SLACK_BOT_TOKEN }}
+        payload: |
           channel: "${{ inputs.SLACK_CHANNEL }}"
           text: "Deployment of ${{ inputs.PROJECT }}/${{ inputs.COMPONENT }} to ${{ inputs.ENVIRONMENT }} ${{ steps.message-values.outputs.job-status }}"
           attachments:
@@ -123,19 +125,6 @@ runs:
                   elements:
                     - type: mrkdwn
                       text: 'To view this deployment, <${{ steps.message-values.outputs.run-url }}|click here>'
-      run: |
-        echo "$SLACK_PAYLOAD" | yq '.'
-
-        COMPACT_PAYLOAD=$(echo "$SLACK_PAYLOAD" | yq -o=json -I0 '.')
-        echo "payload=$COMPACT_PAYLOAD" >> "$GITHUB_OUTPUT"
-    -
-      name: Send Slack message
-      uses: slackapi/slack-github-action@v2.1.1
-      with:
-        errors: true
-        method: chat.postMessage
-        token: ${{ inputs.SLACK_BOT_TOKEN }}
-        payload: $${{ steps.slack-message.outputs.payload }}
 
 branding:
   icon: message-square
